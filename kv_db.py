@@ -180,9 +180,36 @@ class KeyValueDB:
         self.in_transaction = False
         self.transaction_queue.clear()
         return True, "Transaction executed successfully."
+    def snapshot(self):
+        snapshot_data = {
+            "store": dict(self.store),
+            "immutable_keys": list(self.immutable_keys)
+        }
 
-    # Replays the db.log file to rebuild the current database state 
+        temp_snap = self.filepath + "snapshot.tmp"
+        snap_path = self.filepath.replace(".log", ".snapshot")
+
+        with open(temp_snap, "w") as f:
+            json.dump(snapshot_data, f)
+
+        os.replace(temp_snap, snap_path)
+        open(snap_path, "r").close()
+        print("[System] Database snapshot created successfully.")
+    # Replays the db.log file to rebild the current database state 
     def _recover(self):
+        snapshot_success = False
+        snap_path = self.filepath.replace(".log", ".snapshot")
+        if os.path.exists(self.filepath):
+            try:
+                with open(snap_path, "r") as f:
+                    snapshot_data = json.load(f)
+                    self.store = snapshot_data.get("store", {})
+                    self.immutable_keys = set(snapshot_data.get("immutable_keys", []))
+                snapshot_success = True
+            except (IOError, json.JSONDecodeError):
+                print("[System] Error occurred while loading snapshot, falling back to log recovery.")
+            if snapshot_success == True:
+                print("[System] Database state restored from snapshot.\n")
         if not os.path.exists(self.filepath):
             return 
         with open(self.filepath, "r") as f:
@@ -223,6 +250,8 @@ if __name__ == "__main__":
             cmd = parts[0].upper()
 
             if cmd == "EXIT":
+                db.snapshot()
+                print("Snapshot created. Exiting...")
                 break 
             elif cmd == "SET":
                 if parts[1].upper() == "IMUT":
@@ -312,5 +341,6 @@ if __name__ == "__main__":
             else:
                 printError("Unknown command.")
         except KeyboardInterrupt:
-            print("\nExiting...\n")
+            db.snapshot()
+            print("Snapshot created.\nExiting...\n")
             break

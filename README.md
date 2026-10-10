@@ -50,8 +50,7 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 ## Architectural Design
 
 1. **Storage Engine:** Mutating actions are converted to JSON and written sequentially to `db.log`. Sequential disk I/O provides high write performance compared to random disk writes.
-2. **Crash Resilience:** The `_recover()` routine safeguards startup by reading historical logs line-by-line, wrapping parsing logic in error-handling blocks to gracefully manage malformed trailing lines if a crash occurs mid-write.
-
+2. **Efficiency & Crash Resilience:** The `snapshot` function takes a snapshot of the current db.log file and saves it in the db.snapshot file, saving a significant amount of time for large databases. If `snapshot` throws an error, the `_recover()` function takes over. The `_recover()` routine safeguards startup by reading historical logs line-by-line, wrapping parsing logic in error-handling blocks to gracefully manage malformed trailing lines if a crash occurs mid-write. 
 ---
 
 ## Known Limitations & Future Roadmap
