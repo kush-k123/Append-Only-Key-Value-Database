@@ -19,7 +19,7 @@ class KeyValueDB:
             f.write(json.dumps(command) + "\n")
         self.mutation_counter += 1
         self.total_mutations += 1
-        if self.mutation_counter >= 100:
+        if self.mutation_counter >= 100 or os.path.getsize(self.filepath) > 1024:  # Compact if more than 100 mutations or file size exceeds 1MB
             self.compact()
             self.mutation_counter = 0
     # Compacts the db.log file by making a temporary file and writes only the current active keys and values to it, 
