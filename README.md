@@ -23,3 +23,39 @@ A lightweight, persistent key-value store built from scratch in Python. This pro
 2. Run the database engine from your terminal:
    ```bash
    python kv_db.py
+
+```
+
+---
+
+## Command Reference
+
+Once the interactive REPL starts (`db< `), you can use the following commands:
+
+| Command | Syntax | Description |
+| --- | --- | --- |
+| **Set Standard Key** | `SET <key> <value>` | Stores a key-value pair (overwrites if key exists). |
+| **Set Immutable Key** | `SET IMUT <key> <value>` | Stores a key and locks it, preventing standard overwrites. |
+| **Retrieve Value** | `GET <key>` | Fetches the value associated with the key. |
+| **Delete Key** | `DELETE <key>` | Removes a standard key from memory and logs the deletion. |
+| **Remove Immutability** | `DELETE IMUT <key>` | Unlocks an immutable key so it can be modified or deleted. |
+| **Exit** | `EXIT` | Safely closes the database interface. |
+
+---
+
+## Architectural Design
+
+1. **Storage Engine:** Mutating actions are converted to JSON and written sequentially to `db.log`. Sequential disk I/O provides high write performance compared to random disk writes.
+2. **Crash Resilience:** The `_recover()` routine safeguards startup by reading historical logs line-by-line, wrapping parsing logic in error-handling blocks to gracefully manage malformed trailing lines if a crash occurs mid-write.
+
+---
+
+## Known Limitations & Future Roadmap
+
+* **Log Compaction:** The log file grows monotonically with every operation over time. Implementing a background compaction routine to rewrite only active keys is a planned optimization.
+* **Newline Restrictions:** Values currently do not support raw internal newline characters due to line-delimited log serialization.
+* **Concurrency:** Designed for single-process execution; multi-process file locking (`fcntl`/`msvcrt`) is not implemented.
+
+```
+
+```
