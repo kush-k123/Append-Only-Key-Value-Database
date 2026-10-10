@@ -29,7 +29,6 @@ class KeyValueDB:
         os.replace(temp_filepath, self.filepath)
         print("[System] Log compaction completed.")
 
-
     # Sets a standard key-value pair if the key is not immutable
     def set(self, key: str, value: str):
         if key in self.immutable_keys:
@@ -49,7 +48,7 @@ class KeyValueDB:
         self._write_log({"action": "SET_IMUT", "key": key, "value": value})
         return True, "OK"
 
-    # Retrieves the value of the provided key, appending a tag if it's immutable
+    # Retrieves the value of the provided key, adding a tag if it's immutable
     def get(self, key: str):
         if key in self.immutable_keys:
             result = self.store.get(key, "(nil)") 
@@ -58,7 +57,7 @@ class KeyValueDB:
             return result + " (immutable)"
         return self.store.get(key, "(nil)")
 
-    # Deletes a standard key-value pair if it is not locked
+    # Deletes a standard key-value pair if it is not immutable
     def delete(self, key: str):
         if key in self.immutable_keys:
             return False, "Key is immutable and cannot be deleted using the DELETE command."
@@ -82,7 +81,7 @@ class KeyValueDB:
             is_immutable = key in self.immutable_keys
             entries.append((key, value, is_immutable))
         return entries
-    # Replays the db.log file to rebuild the database state on startup
+    # Replays the db.log file to rebuild the currentdatabase state 
     def _recover(self):
         if not os.path.exists(self.filepath):
             return 
