@@ -39,6 +39,7 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 | **List Active Keys** | `LIST` | Lists all active keys, their values and immutability status. |
 | **Compact Database Log** | `COMPACT` | Creates a temporary file with only the active keys to lower bloat of db.log. Also activates anytime the log has more than 100 actions in it, or if the log file size goes over 1MB. |
 | **Display Stats of Current Session** | `INFO` | Lists the uptime, active keys, immutable keys, total mutations, log file size, and the log filepath. |
+| **Transaction State (Multiple Commands in One List)** | `MULTI | DISCARD | EXEC' | MULTI: Starts the transaction State DISCARD: Removes all actions in the transaction prior to the command EXEC: Executes all actions inputted during the transaction |
 | **Exit** | `EXIT` | Safely closes the database interface. |
 
 ---

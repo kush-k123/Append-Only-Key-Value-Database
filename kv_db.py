@@ -11,6 +11,8 @@ class KeyValueDB:
         self.mutation_counter = 0
         self.start = time.time()
         self.total_mutations = 0
+        self.in_transaction = False
+        self.transaction_queue = []
         self._recover()
 
     # Appends a serialized command dictionary to the disk log file
@@ -19,9 +21,10 @@ class KeyValueDB:
             f.write(json.dumps(command) + "\n")
         self.mutation_counter += 1
         self.total_mutations += 1
-        if self.mutation_counter >= 100 or os.path.getsize(self.filepath) > 1024:  # Compact if more than 100 mutations or file size exceeds 1MB
+        if self.mutation_counter >= 100 or os.path.getsize(self.filepath) > 1024:
             self.compact()
             self.mutation_counter = 0
+
     # Compacts the db.log file by making a temporary file and writes only the current active keys and values to it, 
     # then replace the db.log file with the temporary file, effectively removing any deleted or overwritten entries from the log 
     def compact(self):
@@ -35,6 +38,9 @@ class KeyValueDB:
 
     # Sets a standard key-value pair if the key is not immutable
     def set(self, key: str, value: str):
+        if self.in_transaction:
+            self.transaction_queue.append(("SET", key, value))
+            return True, "SET queued for transaction."
         if key in self.immutable_keys:
             return False, "Key is immutable and cannot be overwritten."
         
@@ -44,6 +50,9 @@ class KeyValueDB:
 
     # Sets a key-value pair and locks it against future modifications
     def set_immutable(self, key: str, value: str):
+        if self.in_transaction:
+            self.transaction_queue.append(("SET IMUT", key, value))
+            return True, "SET IMUT queued for transaction."
         if key in self.immutable_keys:
             return False, "Key is already immutable and cannot be overwritten."
         
@@ -63,6 +72,9 @@ class KeyValueDB:
 
     # Deletes a standard key-value pair if it is not immutable
     def delete(self, key: str):
+        if self.in_transaction:
+            self.transaction_queue.append(("DELETE", key))
+            return True, "DELETE queued for transaction."
         if key in self.immutable_keys:
             return False, "Key is immutable and cannot be deleted using the DELETE command."
         if key in self.store:
@@ -73,11 +85,15 @@ class KeyValueDB:
 
     # Removes the immutability lock from a key-value pair
     def remove_imut(self, key: str):
+        if self.in_transaction:
+            self.transaction_queue.append(("REMOVE IMUT", key))
+            return True, "REMOVE IMUT queued for transaction."
         if key in self.immutable_keys:
             self.immutable_keys.remove(key)
             self._write_log({"action": "DELETE_IMUT", "key": key})
             return True, "OK"
         return False, "Key is not immutable or does not exist."
+
     # Lists all keys currently stored in the database as well as their values and immutability status
     def list_all(self):
         entries = []
@@ -85,6 +101,7 @@ class KeyValueDB:
             is_immutable = key in self.immutable_keys
             entries.append((key, value, is_immutable))
         return entries
+
     # Returns the total number of mutations, the total run time of the program, tbe total number of active and immutable keys,
     # the total number of entries in the database, the file size of the db.log file in bytes, and the file path of the db.log file
     def info(self):
@@ -98,8 +115,73 @@ class KeyValueDB:
             "Log File Size (bytes)": file_size,
             "Log File Path": self.filepath
         }
+
+    def multi(self):
+        if self.in_transaction:
+            return False, "Already in a transaction."
+        self.in_transaction = True
+        self.transaction_queue.clear()
+        return True, "Transaction started."
     
-    # Replays the db.log file to rebuild the currentdatabase state 
+    def discard(self):
+        if not self.in_transaction:
+            return False, "Not in a transaction."
+        self.in_transaction = False
+        self.transaction_queue.clear()
+        return True, "Transaction discarded."
+    
+    def exec(self):
+        if not self.in_transaction:
+            return False, "Not in a transaction."
+        
+        validated_actions = []
+        for action, key, *val_list in self.transaction_queue:
+            value = val_list[0] if val_list else None
+
+            if action == "SET" and key in self.immutable_keys:
+                self.in_transaction = False
+                self.transaction_queue.clear()
+                return False, f"Key '{key}' is immutable and cannot be overwritten."
+            elif action == "SET IMUT" and key in self.immutable_keys:
+                self.in_transaction = False
+                self.transaction_queue.clear()
+                return False, f"Key '{key}' is already immutable and cannot be overwritten."
+            elif action == "DELETE":
+                if key in self.immutable_keys:
+                    self.in_transaction = False
+                    self.transaction_queue.clear()
+                    return False, f"Key '{key}' is immutable and cannot be deleted."
+                if key not in self.store:
+                    self.in_transaction = False
+                    self.transaction_queue.clear()
+                    return False, f"Key '{key}' does not exist."
+            elif action == "REMOVE IMUT" and key not in self.immutable_keys:
+                self.in_transaction = False
+                self.transaction_queue.clear()
+                return False, f"Key '{key}' is not immutable or does not exist."
+            
+            validated_actions.append((action, key, value))
+
+        for action, key, value in validated_actions:
+            if action == "SET":
+                self.store[key] = value
+                self._write_log({"action": "SET", "key": key, "value": value})
+            elif action == "DELETE":
+                del self.store[key]
+                self._write_log({"action": "DELETE", "key": key})
+            elif action == "SET IMUT":
+                self.store[key] = value
+                self.immutable_keys.add(key)
+                self._write_log({"action": "SET_IMUT", "key": key, "value": value})
+            elif action == "REMOVE IMUT":
+                self.immutable_keys.remove(key)
+                self._write_log({"action": "DELETE_IMUT", "key": key})
+
+        self.in_transaction = False
+        self.transaction_queue.clear()
+        return True, "Transaction executed successfully."
+
+    # Replays the db.log file to rebuild the current database state 
     def _recover(self):
         if not os.path.exists(self.filepath):
             return 
@@ -110,7 +192,6 @@ class KeyValueDB:
                 try:
                     record = json.loads(line.strip())
                 except json.JSONDecodeError:
-                    # Skip partial or corrupted trailing writes from crashes
                     continue
                 
                 action = record.get("action")
@@ -132,11 +213,11 @@ def printError(errorMessage):
 
 if __name__ == "__main__":
     db = KeyValueDB()
-    print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | INFO | EXIT")
+    print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | INFO | MULTI | DISCARD | EXEC | EXIT")
     while True:
         try:
             parts = input("db< ").strip().split(" ", 2)
-            if not parts:
+            if not parts or parts[0] == "":
                 continue
 
             cmd = parts[0].upper()
@@ -210,8 +291,26 @@ if __name__ == "__main__":
                 stats = db.info()
                 for key, value in stats.items():
                     print(f"{key}: {value}")
+            elif cmd == "MULTI":
+                success, msg = db.multi()
+                if not success:
+                    printError(msg)
+                else:
+                    print(msg)
+            elif cmd == "DISCARD":
+                success, msg = db.discard()
+                if not success:
+                    printError(msg)
+                else:
+                    print(msg)
+            elif cmd == "EXEC":
+                success, msg = db.exec()
+                if not success:
+                    printError(msg)
+                else:
+                    print(msg)
             else:
-                printError("Unknown command. Available commands: SET, SET IMUT, GET, DELETE, REMOVE IMUT, LIST, COMPACT, EXIT")
+                printError("Unknown command.")
         except KeyboardInterrupt:
             print("\nExiting...\n")
             break
