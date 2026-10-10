@@ -38,6 +38,7 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 | **Remove Immutability** | `REMOVE IMUT <key>` | Unlocks an immutable key so it can be modified or deleted. |
 | **List Active Keys** | `LIST` | Lists all active keys, their values and immutability status. |
 | **Compact Database Log** | `COMPACT` | Creates a temporary file with only the active keys to lower bloat of db.log. Also activates anytime the log has more than 100 actions in it. |
+| **Display Stats of Current Session** | `INFO` | Lists the uptime, active keys, immutable keys, total mutations, log file size, and the log filepath. |
 | **Exit** | `EXIT` | Safely closes the database interface. |
 
 ---

@@ -1,5 +1,6 @@
 import json 
 import os 
+import time
 
 class KeyValueDB:
     # Initialization function to set up the empty store and tracking sets
@@ -8,6 +9,8 @@ class KeyValueDB:
         self.store = {}
         self.immutable_keys = set()
         self.mutation_counter = 0
+        self.start = time.time()
+        self.total_mutations = 0
         self._recover()
 
     # Appends a serialized command dictionary to the disk log file
@@ -15,6 +18,7 @@ class KeyValueDB:
         with open(self.filepath, "a") as f:
             f.write(json.dumps(command) + "\n")
         self.mutation_counter += 1
+        self.total_mutations += 1
         if self.mutation_counter >= 100:
             self.compact()
             self.mutation_counter = 0
@@ -81,6 +85,20 @@ class KeyValueDB:
             is_immutable = key in self.immutable_keys
             entries.append((key, value, is_immutable))
         return entries
+    # Returns the total number of mutations, the total run time of the program, tbe total number of active and immutable keys,
+    # the total number of entries in the database, the file size of the db.log file in bytes, and the file path of the db.log file
+    def info(self):
+        uptime = int(time.time() - self.start)
+        file_size = os.path.getsize(self.filepath) if os.path.exists(self.filepath) else 0
+        return {
+            "Uptime (seconds)": uptime,
+            "Active Keys": len(self.store),
+            "Immutable Keys": len(self.immutable_keys),
+            "Total Mutations": self.total_mutations,
+            "Log File Size (bytes)": file_size,
+            "Log File Path": self.filepath
+        }
+    
     # Replays the db.log file to rebuild the currentdatabase state 
     def _recover(self):
         if not os.path.exists(self.filepath):
@@ -114,7 +132,7 @@ def printError(errorMessage):
 
 if __name__ == "__main__":
     db = KeyValueDB()
-    print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | EXIT")
+    print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | INFO | EXIT")
     while True:
         try:
             parts = input("db< ").strip().split(" ", 2)
@@ -188,6 +206,10 @@ if __name__ == "__main__":
                     print("------------------------")
             elif cmd == "COMPACT":
                 db.compact()
+            elif cmd == "INFO":
+                stats = db.info()
+                for key, value in stats.items():
+                    print(f"{key}: {value}")
             else:
                 printError("Unknown command. Available commands: SET, SET IMUT, GET, DELETE, REMOVE IMUT, LIST, COMPACT, EXIT")
         except KeyboardInterrupt:
