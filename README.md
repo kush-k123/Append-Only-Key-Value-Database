@@ -1,4 +1,3 @@
-```markdown
 # Append-Only Log (AOL) Key-Value Database
 
 A lightweight, persistent key-value store built from scratch in Python. This project implements an **Append-Only Log (AOL)** architecture—the same foundational design pattern used by high-performance systems like Redis and Bitcask—combining fast in-memory lookups with durable disk persistence.
@@ -22,10 +21,8 @@ A lightweight, persistent key-value store built from scratch in Python. This pro
 ### Installation & Running
 1. Clone the repository or download the source code script.
 2. Run the database engine from your terminal:
-   ```bash
    python kv_db.py
 
-```
 
 ---
 
@@ -59,9 +56,6 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 
 ## Known Limitations & Future Roadmap
 
+* **Log Compaction:** The log file grows monotonically with every operation over time. Implementing a background compaction routine to rewrite only active keys is a planned optimization.
 * **Newline Restrictions:** Values currently do not support raw internal newline characters due to line-delimited log serialization.
 * **Concurrency:** Designed for single-process execution; multi-process file locking (`fcntl`/`msvcrt`) is not implemented.
-
-```
-
-```
