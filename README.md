@@ -36,6 +36,7 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 | **Retrieve Value** | `GET <key>` | Fetches the value associated with the key. |
 | **Delete Key** | `DELETE <key>` | Removes a standard key from memory and logs the deletion. |
 | **Remove Immutability** | `REMOVE IMUT <key>` | Unlocks an immutable key so it can be modified or deleted. |
+|**List Active Keys** | `LIST` | Lists all active keys, their values and immutability status. |
 | **Exit** | `EXIT` | Safely closes the database interface. |
 
 ---
