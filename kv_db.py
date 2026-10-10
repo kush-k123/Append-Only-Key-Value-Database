@@ -7,12 +7,28 @@ class KeyValueDB:
         self.filepath = filepath
         self.store = {}
         self.immutable_keys = set()
+        self.mutation_counter = 0
         self._recover()
 
     # Appends a serialized command dictionary to the disk log file
     def _write_log(self, command: dict):
         with open(self.filepath, "a") as f:
             f.write(json.dumps(command) + "\n")
+        self.mutation_counter += 1
+        if self.mutation_counter >= 100:
+            self.compact()
+            self.mutation_counter = 0
+    # Compacts the db.log file by making a temporary file and writes only the current active keys and values to it, 
+    # then replace the db.log file with the temporary file, effectively removing any deleted or overwritten entries from the log 
+    def compact(self):
+        temp_filepath = self.filepath + ".tmp"
+        with open(temp_filepath, "w") as f:
+            for key, value in self.store.items():
+                action = "SET_IMUT" if key in self.immutable_keys else "SET"
+                f.write(json.dumps({"action": action, "key": key, "value": value}) + "\n")
+        os.replace(temp_filepath, self.filepath)
+        print("[System] Log compaction completed.")
+
 
     # Sets a standard key-value pair if the key is not immutable
     def set(self, key: str, value: str):
@@ -99,7 +115,7 @@ def printError(errorMessage):
 
 if __name__ == "__main__":
     db = KeyValueDB()
-    print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | EXIT")
+    print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | EXIT")
     while True:
         try:
             parts = input("db< ").strip().split(" ", 2)
@@ -171,6 +187,10 @@ if __name__ == "__main__":
                         status = " (immutable)" if is_immutable else ""
                         print(f"{key}: {value}{status}")
                     print("------------------------")
+            elif cmd == "COMPACT":
+                db.compact()
+            else:
+                printError("Unknown command. Available commands: SET, SET IMUT, GET, DELETE, REMOVE IMUT, LIST, COMPACT, EXIT")
         except KeyboardInterrupt:
             print("\nExiting...\n")
             break
