@@ -21,10 +21,7 @@ A lightweight, persistent key-value store built from scratch in Python. This pro
 ### Installation & Running
 1. Clone the repository or download the source code script.
 2. Run the database engine from your terminal:
-   ```bash
    python kv_db.py
-
-```
 
 ---
 
