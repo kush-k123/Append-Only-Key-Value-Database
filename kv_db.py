@@ -8,6 +8,7 @@ class KeyValueDB:
         self.filepath = filepath
         self.store = {}
         self.immutable_keys = set()
+        self.expiration_keys = {}
         self.mutation_counter = 0
         self.start = time.time()
         self.total_mutations = 0
@@ -31,8 +32,13 @@ class KeyValueDB:
         temp_filepath = self.filepath + ".tmp"
         with open(temp_filepath, "w") as f:
             for key, value in self.store.items():
-                action = "SET_IMUT" if key in self.immutable_keys else "SET"
-                f.write(json.dumps({"action": action, "key": key, "value": value}) + "\n")
+                if key in self.expiration_keys:
+                    remaining_ttl = int(max(0, self.expiration_keys[key] - time.time()))
+                    if remaining_ttl > 0:
+                        f.write(json.dumps({"action": "SETEX", "key": key, "value": value, "expiration_time": remaining_ttl}) + "\n")
+                else:
+                    action = "SET_IMUT" if key in self.immutable_keys else "SET"
+                    f.write(json.dumps({"action": action, "key": key, "value": value}) + "\n")
         os.replace(temp_filepath, self.filepath)
         print("[System] Log compaction completed.")
 
@@ -45,6 +51,7 @@ class KeyValueDB:
             return False, "Key is immutable and cannot be overwritten."
         
         self.store[key] = value
+        self.expiration_keys.pop(key, None)
         self._write_log({"action": "SET", "key": key, "value": value})
         return True, "OK"
 
@@ -58,11 +65,29 @@ class KeyValueDB:
         
         self.store[key] = value
         self.immutable_keys.add(key)
+        self.expiration_keys.pop(key, None)
         self._write_log({"action": "SET_IMUT", "key": key, "value": value})
         return True, "OK"
+        
+    def setex(self, key: str, value: str, expiration_time: int):
+        if self.in_transaction:
+            self.transaction_queue.append(("SETEX", key, value, expiration_time))
+            return True, "SETEX queued for transaction."
+        if key in self.immutable_keys:
+            return False, "Key is immutable and cannot be overwritten."
 
+        self.store[key] = value
+        self.expiration_keys[key] = time.time() + expiration_time
+        self._write_log({"action": "SETEX", "key": key, "value": value, "expiration_time": expiration_time})
+        return True, "OK"
+    
     # Retrieves the value of the provided key, adding a tag if it's immutable
     def get(self, key: str):
+        if key in self.expiration_keys:
+            if time.time() > self.expiration_keys[key]:
+                del self.store[key]
+                del self.expiration_keys[key]
+                return "(nil)"
         if key in self.immutable_keys:
             result = self.store.get(key, "(nil)") 
             if result == "(nil)":
@@ -79,6 +104,7 @@ class KeyValueDB:
             return False, "Key is immutable and cannot be deleted using the DELETE command."
         if key in self.store:
             del self.store[key]
+            self.expiration_keys.pop(key, None)
             self._write_log({"action": "DELETE", "key": key})
             return True, "OK"
         return False, "Key not found."
@@ -96,6 +122,13 @@ class KeyValueDB:
 
     # Lists all keys currently stored in the database as well as their values and immutability status
     def list_all(self):
+        # Clean up expired keys first
+        current_time = time.time()
+        expired_keys = [k for k, exp in self.expiration_keys.items() if current_time > exp]
+        for k in expired_keys:
+            self.store.pop(k, None)
+            self.expiration_keys.pop(k, None)
+
         entries = []
         for key, value in self.store.items():
             is_immutable = key in self.immutable_keys
@@ -137,8 +170,9 @@ class KeyValueDB:
         validated_actions = []
         for action, key, *val_list in self.transaction_queue:
             value = val_list[0] if val_list else None
+            extra = val_list[1] if len(val_list) > 1 else None
 
-            if action == "SET" and key in self.immutable_keys:
+            if action in ("SET", "SETEX") and key in self.immutable_keys:
                 self.in_transaction = False
                 self.transaction_queue.clear()
                 return False, f"Key '{key}' is immutable and cannot be overwritten."
@@ -160,56 +194,74 @@ class KeyValueDB:
                 self.transaction_queue.clear()
                 return False, f"Key '{key}' is not immutable or does not exist."
             
-            validated_actions.append((action, key, value))
+            validated_actions.append((action, key, value, extra))
 
-        for action, key, value in validated_actions:
+        for action, key, value, extra in validated_actions:
             if action == "SET":
                 self.store[key] = value
+                self.expiration_keys.pop(key, None)
                 self._write_log({"action": "SET", "key": key, "value": value})
-            elif action == "DELETE":
-                del self.store[key]
-                self._write_log({"action": "DELETE", "key": key})
+            elif action == "SETEX":
+                self.store[key] = value
+                self.expiration_keys[key] = time.time() + extra
+                self._write_log({"action": "SETEX", "key": key, "value": value, "expiration_time": extra})
             elif action == "SET IMUT":
                 self.store[key] = value
                 self.immutable_keys.add(key)
+                self.expiration_keys.pop(key, None)
                 self._write_log({"action": "SET_IMUT", "key": key, "value": value})
+            elif action == "DELETE":
+                del self.store[key]
+                self.expiration_keys.pop(key, None)
+                self._write_log({"action": "DELETE", "key": key})
             elif action == "REMOVE IMUT":
                 self.immutable_keys.remove(key)
                 self._write_log({"action": "DELETE_IMUT", "key": key})
-
+                
         self.in_transaction = False
         self.transaction_queue.clear()
         return True, "Transaction executed successfully."
+
     def snapshot(self):
         snapshot_data = {
             "store": dict(self.store),
-            "immutable_keys": list(self.immutable_keys)
+            "immutable_keys": list(self.immutable_keys),
+            "expiration_keys": {k: v - time.time() for k, v in self.expiration_keys.items() if v > time.time()}
         }
 
-        temp_snap = self.filepath + "snapshot.tmp"
+        temp_snap = self.filepath.replace(".log", ".snapshot.tmp")
         snap_path = self.filepath.replace(".log", ".snapshot")
 
         with open(temp_snap, "w") as f:
             json.dump(snapshot_data, f)
 
         os.replace(temp_snap, snap_path)
-        open(snap_path, "r").close()
         print("[System] Database snapshot created successfully.")
-    # Replays the db.log file to rebild the current database state 
+
+    # Replays the db.log file to rebuild the current database state 
     def _recover(self):
         snapshot_success = False
         snap_path = self.filepath.replace(".log", ".snapshot")
-        if os.path.exists(self.filepath):
+        if os.path.exists(snap_path):
             try:
                 with open(snap_path, "r") as f:
                     snapshot_data = json.load(f)
                     self.store = snapshot_data.get("store", {})
                     self.immutable_keys = set(snapshot_data.get("immutable_keys", []))
+                    
+                    # Restore TTLs relative to current startup time
+                    saved_ttls = snapshot_data.get("expiration_keys", {})
+                    current_time = time.time()
+                    for k, remaining in saved_ttls.items():
+                        if remaining > 0:
+                            self.expiration_keys[k] = current_time + remaining
+                            
                 snapshot_success = True
             except (IOError, json.JSONDecodeError):
                 print("[System] Error occurred while loading snapshot, falling back to log recovery.")
-            if snapshot_success == True:
+            if snapshot_success:
                 print("[System] Database state restored from snapshot.\n")
+                
         if not os.path.exists(self.filepath):
             return 
         with open(self.filepath, "r") as f:
@@ -226,13 +278,20 @@ class KeyValueDB:
 
                 if action == "SET":
                     self.store[key] = record.get("value")
+                    self.expiration_keys.pop(key, None)
                 elif action == "DELETE":
                     self.store.pop(key, None)
+                    self.expiration_keys.pop(key, None)
                 elif action == "SET_IMUT":
                     self.store[key] = record.get("value")
                     self.immutable_keys.add(key)
+                    self.expiration_keys.pop(key, None)
                 elif action == "DELETE_IMUT":
                     self.immutable_keys.discard(key)
+                elif action == "SETEX":
+                    self.store[key] = record.get("value")
+                    ttl = record.get("expiration_time", 0)
+                    self.expiration_keys[key] = time.time() + ttl
 
 # --- CLI ---
 def printError(errorMessage):
@@ -240,7 +299,7 @@ def printError(errorMessage):
 
 if __name__ == "__main__":
     db = KeyValueDB()
-    print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | INFO | MULTI | DISCARD | EXEC | EXIT")
+    print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | SETEX <key> <time> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | INFO | MULTI | DISCARD | EXEC | EXIT")
     while True:
         try:
             parts = input("db< ").strip().split(" ", 2)
@@ -254,7 +313,7 @@ if __name__ == "__main__":
                 print("Snapshot created. Exiting...")
                 break 
             elif cmd == "SET":
-                if parts[1].upper() == "IMUT":
+                if len(parts) > 1 and parts[1].upper() == "IMUT":
                     sub_parts = parts[2].split(" ", 1) if len(parts) > 2 else []
                     if len(sub_parts) < 2:
                         printError("SET IMUT command requires both key and value.")
@@ -270,9 +329,39 @@ if __name__ == "__main__":
                         continue
                     success, msg = db.set(parts[1], parts[2])
                     if success:
-                        print("OK")
+                        print(msg)
                     else:
                         printError(msg)
+            elif cmd == "SETEX":
+                if len(parts) < 3:
+                    printError("SETEX command requires a key, expiration time, and a value.")
+                    continue
+                
+                sub_parts = parts[2].split(" ", 1)
+                
+                # Check if the user typed: SETEX <seconds> <key> <value>
+                try:
+                    ttl_seconds = int(parts[1])
+                    key = sub_parts[0]
+                    value = sub_parts[1] if len(sub_parts) > 1 else ""
+                except ValueError:
+                    # Check if the user typed: SETEX <key> <seconds> <value>
+                    if len(sub_parts) < 2:
+                        printError("SETEX command requires both expiration time and a value.")
+                        continue
+                    try:
+                        ttl_seconds = int(sub_parts[0])
+                        key = parts[1]
+                        value = sub_parts[1]
+                    except ValueError:
+                        printError("Expiration time must be an integer.")
+                        continue
+                
+                success, msg = db.setex(key, value, ttl_seconds)
+                if success:
+                    print(msg)
+                else:
+                    printError(msg)
 
             elif cmd == "GET":
                 if len(parts) < 2:

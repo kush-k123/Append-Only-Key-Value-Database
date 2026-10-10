@@ -34,6 +34,7 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 | --- | --- | --- |
 | **Set Standard Key** | `SET <key> <value>` | Stores a key-value pair (overwrites if key exists). |
 | **Set Immutable Key** | `SET IMUT <key> <value>` | Stores a key and locks it, preventing standard overwrites. |
+ **Set Expiring Key** | `SETEX <key> <time> <value> OR SETEX <time> <key> <value>` | Stores a key with an expiring time. It will dissappear completely once time is up. |
 | **Retrieve Value** | `GET <key>` | Fetches the value associated with the key. |
 | **Delete Key** | `DELETE <key>` | Removes a standard key from memory and logs the deletion. |
 | **Remove Immutability** | `REMOVE IMUT <key>` | Unlocks an immutable key so it can be modified or deleted. |
