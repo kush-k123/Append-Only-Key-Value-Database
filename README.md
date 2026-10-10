@@ -35,7 +35,7 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 | **Set Immutable Key** | `SET IMUT <key> <value>` | Stores a key and locks it, preventing standard overwrites. |
 | **Retrieve Value** | `GET <key>` | Fetches the value associated with the key. |
 | **Delete Key** | `DELETE <key>` | Removes a standard key from memory and logs the deletion. |
-| **Remove Immutability** | `DELETE IMUT <key>` | Unlocks an immutable key so it can be modified or deleted. |
+| **Remove Immutability** | `REMOVE IMUT <key>` | Unlocks an immutable key so it can be modified or deleted. |
 | **Exit** | `EXIT` | Safely closes the database interface. |
 
 ---
