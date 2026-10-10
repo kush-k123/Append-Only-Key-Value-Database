@@ -1,3 +1,4 @@
+```markdown
 # Append-Only Log (AOL) Key-Value Database
 
 A lightweight, persistent key-value store built from scratch in Python. This project implements an **Append-Only Log (AOL)** architecture—the same foundational design pattern used by high-performance systems like Redis and Bitcask—combining fast in-memory lookups with durable disk persistence.
@@ -21,7 +22,10 @@ A lightweight, persistent key-value store built from scratch in Python. This pro
 ### Installation & Running
 1. Clone the repository or download the source code script.
 2. Run the database engine from your terminal:
+   ```bash
    python kv_db.py
+
+```
 
 ---
 
@@ -36,10 +40,12 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 | **Retrieve Value** | `GET <key>` | Fetches the value associated with the key. |
 | **Delete Key** | `DELETE <key>` | Removes a standard key from memory and logs the deletion. |
 | **Remove Immutability** | `REMOVE IMUT <key>` | Unlocks an immutable key so it can be modified or deleted. |
-| **List Active Keys** | `LIST` | Lists all active keys, their values and immutability status. |
-| **Compact Database Log** | `COMPACT` | Creates a temporary file with only the active keys to lower bloat of db.log. Also activates anytime the log has more than 100 actions in it, or if the log file size goes over 1MB. |
-| **Display Stats of Current Session** | `INFO` | Lists the uptime, active keys, immutable keys, total mutations, log file size, and the log filepath. |
-| **Transaction State (Multiple Commands in One List)** | `MULTI | DISCARD | EXEC' | MULTI: Starts the transaction State DISCARD: Removes all actions in the transaction prior to the command EXEC: Executes all actions inputted during the transaction |
+| **List Active Keys** | `LIST` | Lists all active keys, their values, and immutability status. |
+| **Compact Database Log** | `COMPACT` | Rewrites `db.log` to remove dead entries. Automatically triggers after 100 mutations or when file size exceeds 1MB. |
+| **Display Session Stats** | `INFO` | Lists uptime, active/immutable key counts, total mutations, log file size, and file path. |
+| **Start Transaction** | `MULTI` | Begins a transaction block, queuing subsequent commands. |
+| **Execute Transaction** | `EXEC` | Commits and executes all queued transaction commands atomically. |
+| **Discard Transaction** | `DISCARD` | Clears the current transaction queue and exits transaction mode. |
 | **Exit** | `EXIT` | Safely closes the database interface. |
 
 ---
@@ -53,8 +59,9 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 
 ## Known Limitations & Future Roadmap
 
-* **Log Compaction:** The log file grows monotonically with every operation over time. Implementing a background compaction routine to rewrite only active keys is a planned optimization.
 * **Newline Restrictions:** Values currently do not support raw internal newline characters due to line-delimited log serialization.
 * **Concurrency:** Designed for single-process execution; multi-process file locking (`fcntl`/`msvcrt`) is not implemented.
 
+```
 
+```
