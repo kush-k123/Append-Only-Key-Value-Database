@@ -53,6 +53,4 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 * **Newline Restrictions:** Values currently do not support raw internal newline characters due to line-delimited log serialization.
 * **Concurrency:** Designed for single-process execution; multi-process file locking (`fcntl`/`msvcrt`) is not implemented.
 
-```
 
-```
