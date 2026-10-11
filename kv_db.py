@@ -106,7 +106,7 @@ class KeyValueDB:
             del self.store[key]
             self.expiration_keys.pop(key, None)
             self._write_log({"action": "DELETE", "key": key})
-            return True, "OK"
+            return True, f"Successfully deleted {key}"
         return False, "Key not found."
 
     # Removes the immutability lock from a key-value pair
@@ -117,7 +117,7 @@ class KeyValueDB:
         if key in self.immutable_keys:
             self.immutable_keys.remove(key)
             self._write_log({"action": "DELETE_IMUT", "key": key})
-            return True, "OK"
+            return True, f"Removed immutability from {key}"
         return False, "Key is not immutable or does not exist."
 
     # Lists all keys currently stored in the database as well as their values and immutability status
@@ -148,21 +148,21 @@ class KeyValueDB:
             "Log File Size (bytes)": file_size,
             "Log File Path": self.filepath
         }
-
+    # Starts the transaction sequence
     def multi(self):
         if self.in_transaction:
             return False, "Already in a transaction."
         self.in_transaction = True
         self.transaction_queue.clear()
         return True, "Transaction started."
-    
+    # Discards all actions entered in the transaction sequence (exits transaction sequence)
     def discard(self):
         if not self.in_transaction:
             return False, "Not in a transaction."
         self.in_transaction = False
         self.transaction_queue.clear()
         return True, "Transaction discarded."
-    
+    # Executes all actions entered during the transaction sequence
     def exec(self):
         if not self.in_transaction:
             return False, "Not in a transaction."
@@ -382,7 +382,7 @@ if __name__ == "__main__":
                     if not success:
                         printError(msg)
                     else:
-                        print(f"Successfully deleted: {parts[1]}")
+                        print(msg)
             elif cmd == "REMOVE":
                 if len(parts) < 3 or parts[1].upper() != "IMUT":
                     printError("REMOVE IMUT command requires a key.")
@@ -392,7 +392,7 @@ if __name__ == "__main__":
                     if not success:
                         printError(msg)
                     else:
-                        print(f"Successfully removed immutability from: {parts[2]}")
+                        print(msg)
             elif cmd == "LIST":
                 entries = db.list_all()
                 if not entries:
