@@ -310,7 +310,7 @@ if __name__ == "__main__":
 
             if cmd == "EXIT":
                 db.snapshot()
-                print("Snapshot created. Exiting...")
+                print("\nExiting...\n")
                 break 
             elif cmd == "SET":
                 if len(parts) > 1 and parts[1].upper() == "IMUT":
@@ -431,5 +431,5 @@ if __name__ == "__main__":
                 printError("Unknown command.")
         except KeyboardInterrupt:
             db.snapshot()
-            print("Snapshot created.\nExiting...\n")
+            print("\nExiting...\n")
             break
