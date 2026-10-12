@@ -222,7 +222,7 @@ class KeyValueDB:
         self.transaction_queue.clear()
         return True, "Transaction executed successfully."
     # Takes a "snapshot" of the current active keys in  db.log and saves it in db.snapshot so 
-    # when starting the program it loads all ctive keys quicker than the traditonal recover
+    # when starting the program it loads all ctive keys quicker than the traditonal recover 
     def snapshot(self):
         snapshot_data = {
             "store": dict(self.store),
@@ -239,7 +239,7 @@ class KeyValueDB:
         os.replace(temp_snap, snap_path)
         print("[System] Database snapshot created successfully.")
 
-    # Attempts to recover from the snapshot if it exists, and if not then it
+ # Attempts to recover from the snapshot if it exists, and if not then it
     # replays the db.log file to rebuild the current database state
     def _recover(self):
         snapshot_success = False
@@ -251,7 +251,7 @@ class KeyValueDB:
                     snapshot_data = json.load(f)
                     self.store = snapshot_data.get("store", {})
                     self.immutable_keys = set(snapshot_data.get("immutable_keys", []))
-                    self.expiration_keys = set(snapshot_data.get("expiration_keys"))
+                    
                     # Restore TTLs relative to current startup time
                     saved_ttls = snapshot_data.get("expiration_keys", {})
                     current_time = time.time()
