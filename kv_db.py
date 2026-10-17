@@ -1,6 +1,6 @@
 import json 
 import os 
-import time
+from time import time
 
 class KeyValueDB:
     # Initialization function to set up the empty store and tracking sets
@@ -10,7 +10,7 @@ class KeyValueDB:
         self.immutable_keys = set()
         self.expiration_keys = {}
         self.mutation_counter = 0
-        self.start = time.time()
+        self.start = time()
         self.total_mutations = 0
         self.in_transaction = False
         self.transaction_queue = []
@@ -33,7 +33,7 @@ class KeyValueDB:
         with open(temp_filepath, "w") as f:
             for key, value in self.store.items():
                 if key in self.expiration_keys:
-                    remaining_ttl = int(max(0, self.expiration_keys[key] - time.time()))
+                    remaining_ttl = int(max(0, self.expiration_keys[key] - time()))
                     if remaining_ttl > 0:
                         f.write(json.dumps({"action": "SETEX", "key": key, "value": value, "expiration_time": remaining_ttl}) + "\n")
                 else:
@@ -77,14 +77,14 @@ class KeyValueDB:
             return False, "Key is immutable and cannot be overwritten."
 
         self.store[key] = value
-        self.expiration_keys[key] = time.time() + expiration_time
+        self.expiration_keys[key] = time() + expiration_time
         self._write_log({"action": "SETEX", "key": key, "value": value, "expiration_time": expiration_time})
         return True, "OK"
     
     # Retrieves the value of the provided key, adding a tag if it's immutable
     def get(self, key: str):
         if key in self.expiration_keys:
-            if time.time() > self.expiration_keys[key]:
+            if time() > self.expiration_keys[key]:
                 del self.store[key]
                 del self.expiration_keys[key]
                 return "(nil)"
@@ -123,7 +123,7 @@ class KeyValueDB:
     # Lists all keys currently stored in the database as well as their values and immutability status
     def list_all(self):
         # Clean up expired keys first
-        current_time = time.time()
+        current_time = time()
         expired_keys = [k for k, exp in self.expiration_keys.items() if current_time > exp]
         for k in expired_keys:
             self.store.pop(k, None)
@@ -138,7 +138,7 @@ class KeyValueDB:
     # Returns the total number of mutations, the total run time of the program, tbe total number of active and immutable keys,
     # the total number of entries in the database, the file size of the db.log file in bytes, and the file path of the db.log file
     def info(self):
-        uptime = int(time.time() - self.start)
+        uptime = int(time() - self.start)
         file_size = os.path.getsize(self.filepath) if os.path.exists(self.filepath) else 0
         return {
             "Uptime (seconds)": uptime,
@@ -203,7 +203,7 @@ class KeyValueDB:
                 self._write_log({"action": "SET", "key": key, "value": value})
             elif action == "SETEX":
                 self.store[key] = value
-                self.expiration_keys[key] = time.time() + extra
+                self.expiration_keys[key] = time() + extra
                 self._write_log({"action": "SETEX", "key": key, "value": value, "expiration_time": extra})
             elif action == "SET IMUT":
                 self.store[key] = value
@@ -227,7 +227,7 @@ class KeyValueDB:
         snapshot_data = {
             "store": dict(self.store),
             "immutable_keys": list(self.immutable_keys),
-            "expiration_keys": {k: v - time.time() for k, v in self.expiration_keys.items() if v > time.time()}
+            "expiration_keys": {k: v - time() for k, v in self.expiration_keys.items() if v > time()}
         }
 
         temp_snap = self.filepath.replace(".log", ".snapshot.tmp")
@@ -239,7 +239,7 @@ class KeyValueDB:
         os.replace(temp_snap, snap_path)
         print("\n[System] Database snapshot created successfully.")
 
- # Attempts to recover from the snapshot if it exists, and if not then it
+    # Attempts to recover from the snapshot if it exists, and if not then it
     # replays the db.log file to rebuild the current database state
     def _recover(self):
         snapshot_success = False
@@ -254,7 +254,7 @@ class KeyValueDB:
                     
                     # Restore TTLs relative to current startup time
                     saved_ttls = snapshot_data.get("expiration_keys", {})
-                    current_time = time.time()
+                    current_time = time()
                     for k, remaining in saved_ttls.items():
                         if remaining > 0:
                             self.expiration_keys[k] = current_time + remaining
@@ -295,7 +295,7 @@ class KeyValueDB:
                 elif action == "SETEX":
                     self.store[key] = record.get("value")
                     ttl = record.get("expiration_time", 0)
-                    self.expiration_keys[key] = time.time() + ttl
+                    self.expiration_keys[key] = time() + ttl
 
 # --- CLI ---
 if __name__ == "__main__":
@@ -303,7 +303,7 @@ if __name__ == "__main__":
     def printError(errorMessage):
         print(f"ERROR: {errorMessage}")
         
-    print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | SETEX <key> <time> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | INFO | MULTI | DISCARD | EXEC | EXIT")
+    print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | SETEX <time> <key> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | INFO | MULTI | DISCARD | EXEC | EXIT")
     while True:
         try:
             parts = input("db< ").strip().split(" ", 2)
@@ -338,28 +338,22 @@ if __name__ == "__main__":
                         printError(msg)
             elif cmd == "SETEX":
                 if len(parts) < 3:
-                    printError("SETEX command requires a key, expiration time, and a value.")
+                    printError("SETEX command requires a time, key, and a value.")
+                    continue
+                
+                try:
+                    ttl_seconds = int(parts[1])
+                except ValueError:
+                    printError("Expiration time must be an integer (Syntax: SETEX <time> <key> <value>).")
                     continue
                 
                 sub_parts = parts[2].split(" ", 1)
+                if len(sub_parts) < 2:
+                    printError("SETEX command requires both a key and a value.")
+                    continue
                 
-                # Check if the user typed: SETEX <seconds> <key> <value>
-                try:
-                    ttl_seconds = int(parts[1])
-                    key = sub_parts[0]
-                    value = sub_parts[1] if len(sub_parts) > 1 else ""
-                except ValueError:
-                    # Check if the user typed: SETEX <key> <seconds> <value>
-                    if len(sub_parts) < 2:
-                        printError("SETEX command requires both expiration time and a value.")
-                        continue
-                    try:
-                        ttl_seconds = int(sub_parts[0])
-                        key = parts[1]
-                        value = sub_parts[1]
-                    except ValueError:
-                        printError("Expiration time must be an integer.")
-                        continue
+                key = sub_parts[0]
+                value = sub_parts[1]
                 
                 success, msg = db.setex(key, value, ttl_seconds)
                 if success:
