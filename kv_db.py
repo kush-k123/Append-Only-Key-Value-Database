@@ -122,7 +122,6 @@ class KeyValueDB:
 
     # Lists all keys currently stored in the database as well as their values and immutability status
     def list_all(self):
-        # Clean up expired keys first
         current_time = time()
         expired_keys = [k for k, exp in self.expiration_keys.items() if current_time > exp]
         for k in expired_keys:
@@ -135,8 +134,7 @@ class KeyValueDB:
             entries.append((key, value, is_immutable))
         return entries
 
-    # Returns the total number of mutations, the total run time of the program, tbe total number of active and immutable keys,
-    # the total number of entries in the database, the file size of the db.log file in bytes, and the file path of the db.log file
+    # Returns the total number of mutations, uptime, active/immutable keys, and file info
     def info(self):
         uptime = int(time() - self.start)
         file_size = os.path.getsize(self.filepath) if os.path.exists(self.filepath) else 0
@@ -148,21 +146,21 @@ class KeyValueDB:
             "Log File Size (bytes)": file_size,
             "Log File Path": self.filepath
         }
-    # Starts the transaction sequence
+
     def multi(self):
         if self.in_transaction:
             return False, "Already in a transaction."
         self.in_transaction = True
         self.transaction_queue.clear()
         return True, "Transaction started."
-    # Discards all actions entered in the transaction sequence (exits transaction sequence)
+
     def discard(self):
         if not self.in_transaction:
             return False, "Not in a transaction."
         self.in_transaction = False
         self.transaction_queue.clear()
         return True, "Transaction discarded."
-    # Executes all actions entered during the transaction sequence
+
     def exec(self):
         if not self.in_transaction:
             return False, "Not in a transaction."
@@ -221,8 +219,7 @@ class KeyValueDB:
         self.in_transaction = False
         self.transaction_queue.clear()
         return True, "Transaction executed successfully."
-    # Takes a "snapshot" of the current active keys in  db.log and saves it in db.snapshot so 
-    # when starting the program it loads all ctive keys quicker than the traditonal recover 
+
     def snapshot(self):
         snapshot_data = {
             "store": dict(self.store),
@@ -239,20 +236,16 @@ class KeyValueDB:
         os.replace(temp_snap, snap_path)
         print("\n[System] Database snapshot created successfully.")
 
-    # Attempts to recover from the snapshot if it exists, and if not then it
-    # replays the db.log file to rebuild the current database state
     def _recover(self):
         snapshot_success = False
         snap_path = self.filepath.replace(".log", ".snapshot")
         if os.path.exists(snap_path):
-            # Trys to restore using the snapshot
             try:
                 with open(snap_path, "r") as f:
                     snapshot_data = json.load(f)
                     self.store = snapshot_data.get("store", {})
                     self.immutable_keys = set(snapshot_data.get("immutable_keys", []))
                     
-                    # Restore TTLs relative to current startup time
                     saved_ttls = snapshot_data.get("expiration_keys", {})
                     current_time = time()
                     for k, remaining in saved_ttls.items():
@@ -260,7 +253,6 @@ class KeyValueDB:
                             self.expiration_keys[k] = current_time + remaining
                             
                 snapshot_success = True
-            # If there is an error in opening the file then it prints an error
             except (IOError, json.JSONDecodeError):
                 print("[System] Error occurred while loading snapshot, falling back to log recovery.")
             if snapshot_success:
@@ -298,10 +290,11 @@ class KeyValueDB:
                     self.expiration_keys[key] = time() + ttl
 
 # --- CLI ---
+def printError(errorMessage):
+    print(f"ERROR: {errorMessage}")
+
 if __name__ == "__main__":
     db = KeyValueDB()
-    def printError(errorMessage):
-        print(f"ERROR: {errorMessage}")
         
     print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | SETEX <time> <key> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | INFO | MULTI | DISCARD | EXEC | EXIT")
     while True:
@@ -312,121 +305,125 @@ if __name__ == "__main__":
 
             cmd = parts[0].upper()
 
-            if cmd == "EXIT":
-                db.snapshot()
-                print("\nExiting...\n")
-                break 
-            elif cmd == "SET":
-                if len(parts) > 1 and parts[1].upper() == "IMUT":
-                    sub_parts = parts[2].split(" ", 1) if len(parts) > 2 else []
-                    if len(sub_parts) < 2:
-                        printError("SET IMUT command requires both key and value.")
+            match cmd:
+                case "EXIT":
+                    db.snapshot()
+                    print("\nExiting...\n")
+                    break 
+
+                case "SET":
+                    if len(parts) > 1 and parts[1].upper() == "IMUT":
+                        sub_parts = parts[2].split(" ", 1) if len(parts) > 2 else []
+                        if len(sub_parts) < 2:
+                            printError("SET IMUT command requires both key and value.")
+                        else:
+                            success, msg = db.set_immutable(sub_parts[0], sub_parts[1])
+                            print(msg if success else errorMessageHandler := msg) if not success else print(msg)
                     else:
-                        success, msg = db.set_immutable(sub_parts[0], sub_parts[1])
+                        if len(parts) < 3:
+                            printError("SET command requires both key and value.")
+                            continue
+                        success, msg = db.set(parts[1], parts[2])
                         if success:
                             print(msg)
                         else:
                             printError(msg)
-                else:
+
+                case "SETEX":
                     if len(parts) < 3:
-                        printError("SET command requires both key and value.")
+                        printError("SETEX command requires a time, key, and a value.")
                         continue
-                    success, msg = db.set(parts[1], parts[2])
+                    
+                    try:
+                        ttl_seconds = int(parts[1])
+                    except ValueError:
+                        printError("Expiration time must be an integer (Syntax: SETEX <time> <key> <value>).")
+                        continue
+                    
+                    sub_parts = parts[2].split(" ", 1)
+                    if len(sub_parts) < 2:
+                        printError("SETEX command requires both a key and a value.")
+                        continue
+                    
+                    success, msg = db.setex(sub_parts[0], sub_parts[1], ttl_seconds)
                     if success:
                         print(msg)
                     else:
                         printError(msg)
-            elif cmd == "SETEX":
-                if len(parts) < 3:
-                    printError("SETEX command requires a time, key, and a value.")
-                    continue
-                
-                try:
-                    ttl_seconds = int(parts[1])
-                except ValueError:
-                    printError("Expiration time must be an integer (Syntax: SETEX <time> <key> <value>).")
-                    continue
-                
-                sub_parts = parts[2].split(" ", 1)
-                if len(sub_parts) < 2:
-                    printError("SETEX command requires both a key and a value.")
-                    continue
-                
-                key = sub_parts[0]
-                value = sub_parts[1]
-                
-                success, msg = db.setex(key, value, ttl_seconds)
-                if success:
-                    print(msg)
-                else:
-                    printError(msg)
 
-            elif cmd == "GET":
-                if len(parts) < 2:
-                    printError("GET command requires a key.")
-                    continue
-                result = db.get(parts[1])
-                if result == "(nil)":
-                    printError("Key not found")
-                else:
-                    print(result)
+                case "GET":
+                    if len(parts) < 2:
+                        printError("GET command requires a key.")
+                        continue
+                    result = db.get(parts[1])
+                    if result == "(nil)":
+                        printError("Key not found")
+                    else:
+                        print(result)
 
-            elif cmd == "DELETE":
-                if len(parts) < 2:
-                    printError("DELETE command requires a key.")
-                    continue
-                else:
+                case "DELETE":
+                    if len(parts) < 2:
+                        printError("DELETE command requires a key.")
+                        continue
                     success, msg = db.delete(parts[1])
                     if not success:
                         printError(msg)
                     else:
                         print(msg)
-            elif cmd == "REMOVE":
-                if len(parts) < 3 or parts[1].upper() != "IMUT":
-                    printError("REMOVE IMUT command requires a key.")
-                    continue
-                else:
+
+                case "REMOVE":
+                    if len(parts) < 3 or parts[1].upper() != "IMUT":
+                        printError("REMOVE IMUT command requires a key.")
+                        continue
                     success, msg = db.remove_imut(parts[2])
                     if not success:
                         printError(msg)
                     else:
                         print(msg)
-            elif cmd == "LIST":
-                entries = db.list_all()
-                if not entries:
-                    print("(empty database)")
-                else:
-                    print("--- Database Entries ---")
-                    for key, value, is_immutable in entries:
-                        status = " (immutable)" if is_immutable else ""
-                        print(f"{key}: {value}{status}")
-                    print("------------------------")
-            elif cmd == "COMPACT":
-                db.compact()
-            elif cmd == "INFO":
-                stats = db.info()
-                for key, value in stats.items():
-                    print(f"{key}: {value}")
-            elif cmd == "MULTI":
-                success, msg = db.multi()
-                if not success:
-                    printError(msg)
-                else:
-                    print(msg)
-            elif cmd == "DISCARD":
-                success, msg = db.discard()
-                if not success:
-                    printError(msg)
-                else:
-                    print(msg)
-            elif cmd == "EXEC":
-                success, msg = db.exec()
-                if not success:
-                    printError(msg)
-                else:
-                    print(msg)
-            else:
-                printError("Unknown command.")
+
+                case "LIST":
+                    entries = db.list_all()
+                    if not entries:
+                        print("(empty database)")
+                    else:
+                        print("--- Database Entries ---")
+                        for key, value, is_immutable in entries:
+                            status = " (immutable)" if is_immutable else ""
+                            print(f"{key}: {value}{status}")
+                        print("------------------------")
+
+                case "COMPACT":
+                    db.compact()
+
+                case "INFO":
+                    stats = db.info()
+                    for key, value in stats.items():
+                        print(f"{key}: {value}")
+
+                case "MULTI":
+                    success, msg = db.multi()
+                    if not success:
+                        printError(msg)
+                    else:
+                        print(msg)
+
+                case "DISCARD":
+                    success, msg = db.discard()
+                    if not success:
+                        printError(msg)
+                    else:
+                        print(msg)
+
+                case "EXEC":
+                    success, msg = db.exec()
+                    if not success:
+                        printError(msg)
+                    else:
+                        print(msg)
+
+                case _:
+                    printError("Unknown command.")
+
         except KeyboardInterrupt:
             db.snapshot()
             print("\nExiting...\n")
