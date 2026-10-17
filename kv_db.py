@@ -237,7 +237,7 @@ class KeyValueDB:
             json.dump(snapshot_data, f)
 
         os.replace(temp_snap, snap_path)
-        print("[System] Database snapshot created successfully.")
+        print("\n[System] Database snapshot created successfully.")
 
  # Attempts to recover from the snapshot if it exists, and if not then it
     # replays the db.log file to rebuild the current database state
@@ -298,11 +298,11 @@ class KeyValueDB:
                     self.expiration_keys[key] = time.time() + ttl
 
 # --- CLI ---
-def printError(errorMessage):
-    print(f"ERROR: {errorMessage}")
-
 if __name__ == "__main__":
     db = KeyValueDB()
+    def printError(errorMessage):
+        print(f"ERROR: {errorMessage}")
+        
     print("Simple KV Database installed. COMMANDS: SET <key> <value> | SET IMUT <key> <value> | SETEX <key> <time> <value> | GET <key> | DELETE <key> | REMOVE IMUT <key> | LIST | COMPACT | INFO | MULTI | DISCARD | EXEC | EXIT")
     while True:
         try:
