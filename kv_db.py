@@ -318,7 +318,10 @@ if __name__ == "__main__":
                             printError("SET IMUT command requires both key and value.")
                         else:
                             success, msg = db.set_immutable(sub_parts[0], sub_parts[1])
-                            print(msg if success else errorMessageHandler := msg) if not success else print(msg)
+                            if success:
+                                print(msg)
+                            else:
+                                printError(msg)
                     else:
                         if len(parts) < 3:
                             printError("SET command requires both key and value.")
