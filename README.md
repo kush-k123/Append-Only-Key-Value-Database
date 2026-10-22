@@ -55,6 +55,6 @@ Once the interactive REPL starts (`db< `), you can use the following commands:
 ---
 
 ## Known Limitations & Future Roadmap
-
+* **Multiple Keys Pointing to One Value:** Sometimes when you have multiple keys pointing to one value, you will have to manually use the COMPACT command to make sure they get saved before you exit.
 * **Newline Restrictions:** Values currently do not support raw internal newline characters due to line-delimited log serialization.
 * **Concurrency:** Designed for single-process execution; multi-process file locking (`fcntl`/`msvcrt`) is not implemented.
